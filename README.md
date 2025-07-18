@@ -58,6 +58,10 @@ Redis
 
 Docker 
 
+📦 Projeyi Çalıştır
+
+https://github.com/ecesural/LogiwaProductManagement.git
+
 🌍 Swagger UI
 
 https://localhost:5001/swagger/index.html

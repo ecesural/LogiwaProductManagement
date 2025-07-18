@@ -1,4 +1,4 @@
-﻿🧠 Product Management API
+🧠 Product Management API
 
 Bu proje, .NET 9 kullanılarak geliştirilmiş DDD (Domain Driven Design) uyumlu bir Ürün Yönetim API'sidir.
 
@@ -20,7 +20,7 @@ Bu proje, .NET 9 kullanılarak geliştirilmiş DDD (Domain Driven Design) uyumlu
 
 🧰 Redis entegrasyonu (opsiyonel cache altyapısı)
 
-📚 Swagger 
+📚 Swagger
 
 🐳 Docker desteği
 
@@ -28,27 +28,24 @@ Bu proje, .NET 9 kullanılarak geliştirilmiş DDD (Domain Driven Design) uyumlu
 
 ├── src/
 
-│   ├── Product.Presentation      → API Layer (Controllers, Middlewares, Extensions)
+│ ├── Product.Presentation → API Layer (Controllers, Middlewares, Extensions)
 
-│   ├── Product.Persistence       → (DbContext, Repositories)
+│ ├── Product.Persistence → (DbContext, Repositories)
 
-│   ├── Product.Application       → Application Layer (Commands, Queries, Handlers)
+│ ├── Product.Application → Application Layer (Commands, Queries, Handlers)
 
-│   ├── Product.Domain            → Domain Layer (Entities, Events)
+│ ├── Product.Domain → Domain Layer (Entities, Events)
 
-│   ├── Product.Infrastructure    → Infrastructure Layer (Events, Caching, Logging)
+│ ├── Product.Infrastructure → Infrastructure Layer (Events, Caching, Logging)
 
-│   ├── docker-compose.yml           → Docker setup 
+│ ├── docker-compose.yml → Docker setup
 
-│   ├── README.md                    → Proje dokümantasyonu
 
 ├── tests/
-  
-└── Product.Tests             → UnitTests
 
+└── Product.Tests → UnitTests
 
-⚙️ Kurulum Adımları
-🔧 Gereksinimler
+⚙️ Kurulum Adımları 🔧 Gereksinimler
 
 .NET 9 SDK
 
@@ -56,7 +53,11 @@ MSSQL Server (veya hangi veritabanı kullanılıyorsa)
 
 Redis
 
-Docker 
+Docker
+
+📦 Projeyi Çalıştır
+
+https://github.com/ecesural/LogiwaProductManagement.git Master branchine push yapıldı oradan solution dosyası sağ tık ile açılacaktır.
 
 🌍 Swagger UI
 
@@ -66,13 +67,12 @@ https://localhost:5001/swagger/index.html
 
 Domain içerisinde Domain Events kullanılarak bağımsız iş kuralları birbirinden ayrılmıştır.
 
-Uygulama katmanında INotificationHandler<T> (MediatR) kullanılarak event’ler asenkron olarak işlenir.
+Uygulama katmanında INotificationHandler (MediatR) kullanılarak event’ler asenkron olarak işlenir.
 
 Olası senaryolar: ProductCreatedEvent, ProductUpdatedEvent, ProductDeletedEvent, vb.
 
 📓 Loglama
 
-Özel ILoggerService<T> ile loglama soyutlandı.
+Özel ILoggerService ile loglama soyutlandı.
 
 ExceptionHandlingMiddleware ile tüm global hatalar loglanır.
-

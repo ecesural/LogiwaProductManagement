@@ -61,6 +61,7 @@ Docker
 📦 Projeyi Çalıştır
 
 https://github.com/ecesural/LogiwaProductManagement.git
+Master branchine push yapıldı oradan 
 
 🌍 Swagger UI
 

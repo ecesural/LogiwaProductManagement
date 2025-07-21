@@ -12,18 +12,18 @@ public class ProductRepository(ProductDbContext context) : IProductRepository
     }
     public async Task<Domain.Entities.Product?> GetByIdAsync(Guid id)
     {
-        return await context.Products.Include(p => p.Category)
+        return await context.Products.AsNoTracking().Include(p => p.Category)
             .FirstOrDefaultAsync(p => p.Id == id);
     }
     public async Task<List<Domain.Entities.Product>> GetAllAsync()
     {
-        return await context.Products
+        return await context.Products.AsNoTracking()
             .Include(p => p.Category)
             .ToListAsync();
     }
     public async Task<List<Domain.Entities.Product>> FilterAsync(string? keyword, int? minStock, int? maxStock)
     {
-        IQueryable<Domain.Entities.Product> query = context.Products.Include(p => p.Category);
+        IQueryable<Domain.Entities.Product> query = context.Products.AsNoTracking().Include(p => p.Category);
 
         if (!string.IsNullOrWhiteSpace(keyword))
         {

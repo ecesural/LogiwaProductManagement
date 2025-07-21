@@ -9,7 +9,7 @@ public class CategoryRepository(ProductDbContext context) : ICategoryRepository
 {
     public async Task<Category?> GetByIdAsync(Guid? id)
     {
-        return await context.Categories
+        return await context.Categories.AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == id);
     }
 }

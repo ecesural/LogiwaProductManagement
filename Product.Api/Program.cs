@@ -28,25 +28,28 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
     {
         Title = "Logiwa.Product.Management.Api",
-        Version = "v3"
+        Version = "v1"
     });
 });
+builder.Services.AddAuthentication("Bearer")
+    .AddJwtBearer("Bearer", options =>
+    {
+        options.Authority = "https://your.identityserver.url";
+        options.Audience = "api1";
+    });
 
 var app = builder.Build();
-
+app.UseCustomExceptionHandling();
+app.UseHttpsRedirection();
+app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Logiwa.Product.Management.Api v1");
     c.RoutePrefix = string.Empty;
 });
-
-app.UseCustomExceptionHandling();
-app.UseHttpsRedirection();
-app.UseAuthorization();
-app.UseRequestResponseLogging();
-app.UseCustomHealthCheck();
-app.UseRouting();
 app.MapControllers();
 
 app.Run();

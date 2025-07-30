@@ -1,8 +1,10 @@
 ﻿using MediatR;
+using Product.Api.Application.Common;
 using Product.Api.Application.Common.Interfaces;
 using Product.Api.Application.Common.Messages;
 using Product.Api.Application.Features.Products.Dtos;
 using Product.Api.Application.Features.Products.Queries;
+using Product.Api.Presentation.Extensions;
 
 namespace Product.Api.Application.Features.Products.Handlers;
 
@@ -12,50 +14,45 @@ public class GetProductByIdQueryHandler(
     ILoggerService<GetProductByIdQueryHandler> logger)
     : IRequestHandler<GetProductByIdQuery, ProductDto>
 {
-    private const string CachePrefix = "product:";
     public async Task<ProductDto> Handle(GetProductByIdQuery request, CancellationToken cancellationToken)
     {
-        var cacheKey = CachePrefix + request.Id;
         try
         {
-            var cached = await redisCacheService.GetAsync<ProductDto>(cacheKey);
-            if (cached is not null)
-            {
-                logger.LogInfo($"Product {request.Id} returned from cache.");
-                return cached;
-            }
+            var (productDto, fromCache) = await redisCacheService.TryGetOrSetAsync(
+                CacheKeys.ProductById(request.Id),
+                async ct =>
+                {
+                    var product = await productRepository.GetByIdAsync(request.Id, ct);
+                    if (product is not null)
+                        return new ProductDto
+                        {
+                            Id = product.Id,
+                            Title = product.Title,
+                            Description = product.Description,
+                            Category = product.Category,
+                            StockQuantity = product.StockQuantity,
+                            IsLive = product.IsLive
+                        };
+                   
+                    logger.LogWarning($"Product not found. Id: {request.Id}");
+                    throw new KeyNotFoundException(ExceptionMessages.ProductNotFound);
+                },
+                TimeSpan.FromHours(1),
+                cancellationToken: cancellationToken
+            );
 
-            var product = await productRepository.GetByIdAsync(request.Id);
-            if (product is null)
-            {
-                logger.LogWarning($"{ExceptionMessages.ProductNotFound} : {request.Id}");
-                throw new KeyNotFoundException(ExceptionMessages.ProductNotFound);
-            }
-
-            var result = new ProductDto
-            {
-                Id = product.Id,
-                Title = product.Title,
-                Description = product.Description,
-                Category = product.Category,
-                StockQuantity = product.StockQuantity,
-                IsLive = product.IsLive
-            };
-
-            await redisCacheService.SetAsync(cacheKey, result, TimeSpan.FromHours(1));
-
-            logger.LogInfo($"Product {request.Id} cached and returned.");
-            return result;
+            logger.LogInfo($"Product {request.Id} returned from {(fromCache ? "cache" : "DB")}.");
+            return productDto!;
         }
         catch (KeyNotFoundException ex)
         {
             logger.LogWarning($"Not found error: {ex.Message}");
-            throw; 
+            throw;
         }
         catch (Exception ex)
         {
             logger.LogError($"Unexpected error while getting product {request.Id}.", ex);
-            throw; 
+            throw;
         }
     }
 }

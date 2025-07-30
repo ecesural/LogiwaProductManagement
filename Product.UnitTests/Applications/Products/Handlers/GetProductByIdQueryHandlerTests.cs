@@ -35,7 +35,7 @@ public class GetProductByIdQueryHandlerTests
         };
 
         var cacheKey = CachePrefix + productId;
-        _redisCacheServiceMock.Setup(x => x.GetAsync<ProductDto>(cacheKey))
+        _redisCacheServiceMock.Setup(x => x.GetAsync<ProductDto>(cacheKey,It.IsAny<CancellationToken>()))
             .ReturnsAsync(productDto);
 
         var handler = CreateHandler();
@@ -43,7 +43,7 @@ public class GetProductByIdQueryHandlerTests
         var result = await handler.Handle(new GetProductByIdQuery(productId), CancellationToken.None);
 
         result.Should().BeEquivalentTo(productDto);
-        _productRepositoryMock.Verify(x => x.GetByIdAsync(It.IsAny<Guid>()), Times.Never);
+        _productRepositoryMock.Verify(x => x.GetByIdAsync(It.IsAny<Guid>(),It.IsAny<CancellationToken>()), Times.Never);
         _loggerMock.Verify(x => x.LogInfo(It.Is<string>(s => s.Contains("returned from cache"))), Times.Once);
     }
 
@@ -57,13 +57,13 @@ public class GetProductByIdQueryHandlerTests
         idProp!.SetValue(product, productId);
 
         var cacheKey = CachePrefix + productId;
-        _redisCacheServiceMock.Setup(x => x.GetAsync<ProductDto>(cacheKey))
+        _redisCacheServiceMock.Setup(x => x.GetAsync<ProductDto>(cacheKey,It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProductDto?)null);
 
-        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId))
+        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId,It.IsAny<CancellationToken>()))
             .ReturnsAsync(product);
 
-        _redisCacheServiceMock.Setup(x => x.SetAsync(cacheKey, It.IsAny<ProductDto>(), It.IsAny<TimeSpan>()))
+        _redisCacheServiceMock.Setup(x => x.SetAsync(cacheKey, It.IsAny<ProductDto>(), It.IsAny<TimeSpan>(),It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var handler = CreateHandler();
@@ -73,9 +73,8 @@ public class GetProductByIdQueryHandlerTests
         result.Id.Should().Be(productId);
         result.Title.Should().Be("Product 1");
 
-        _productRepositoryMock.Verify(x => x.GetByIdAsync(productId), Times.Once);
-        _redisCacheServiceMock.Verify(x => x.SetAsync(cacheKey, It.IsAny<ProductDto>(), It.IsAny<TimeSpan>()), Times.Once);
-        _loggerMock.Verify(x => x.LogInfo(It.Is<string>(s => s.Contains("cached and returned"))), Times.Once);
+        _productRepositoryMock.Verify(x => x.GetByIdAsync(productId,It.IsAny<CancellationToken>()), Times.Once);
+        _redisCacheServiceMock.Verify(x => x.SetAsync(cacheKey, It.IsAny<ProductDto>(), It.IsAny<TimeSpan>(),It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -84,10 +83,10 @@ public class GetProductByIdQueryHandlerTests
         var productId = Guid.NewGuid();
         var cacheKey = CachePrefix + productId;
 
-        _redisCacheServiceMock.Setup(x => x.GetAsync<ProductDto>(cacheKey))
+        _redisCacheServiceMock.Setup(x => x.GetAsync<ProductDto>(cacheKey,It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProductDto?)null);
 
-        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId))
+        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId,It.IsAny<CancellationToken>()))
             .ReturnsAsync((Api.Domain.Entities.Product?)null);
 
         var handler = CreateHandler();

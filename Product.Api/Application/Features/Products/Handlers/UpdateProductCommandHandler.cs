@@ -5,6 +5,7 @@ using Product.Api.Application.Features.Products.Commands;
 using Product.Api.Application.Features.Products.Dtos;
 using Product.Api.Application.Features.Products.Responses;
 using Product.Api.Domain.Entities;
+using Product.Api.Presentation.Extensions;
 
 namespace Product.Api.Application.Features.Products.Handlers;
 
@@ -16,35 +17,31 @@ public class UpdateProductCommandHandler(
     ILoggerService<UpdateProductCommandHandler> logger)
     : IRequestHandler<UpdateProductCommand, CreateAndUpdateProductResponse>
 {
-    private const string CachePrefix = "product:";
-    private const string CachePrefixAll = "product:all";
     public async Task<CreateAndUpdateProductResponse> Handle(UpdateProductCommand request, CancellationToken cancellationToken)
     {
         logger.LogInfo($"UpdateProductCommand started for ID: {request.ProductId}");
+       
         try
         {
-            var product = await productRepository.GetByIdAsync(request.ProductId); 
+            var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken); 
             if (product is null) 
             { 
                 logger.LogWarning($"{ExceptionMessages.ProductNotFound} : {request.ProductId}"); 
                 throw new KeyNotFoundException(ExceptionMessages.ProductNotFound);
             }
             
-            var (title, description, stockQuantity, category) = await GetUpdatedProductFieldsAsync(request, product);
+            var (title, description, stockQuantity, category) = await GetUpdatedProductFieldsAsync(request, product, cancellationToken);
 
             product.Update(title, description, category?.Id, stockQuantity, category);
 
-            await productRepository.UpdateAsync(product);
-           
-            foreach (var domainEvent in product.DomainEvents)
-            {
-                await domainEventPublisher.PublishAsync(domainEvent, cancellationToken);
-            }
-            
-            var cacheKey = CachePrefix + product.Id;
-            await redisCacheService.RemoveAsync(cacheKey);
-            await redisCacheService.RemoveAsync(CachePrefixAll);
+            await productRepository.UpdateAsync(product,cancellationToken);
 
+            await domainEventPublisher.PublishDomainEventsAsync(product.DomainEvents, logger,
+                cancellationToken);
+         
+            product.ClearDomainEvents(); 
+            await redisCacheService.RemoveProductCacheAsync(product.Id, logger, cancellationToken);
+         
             logger.LogInfo($"Product updated: {request.ProductId}");
             
             return new CreateAndUpdateProductResponse{
@@ -57,7 +54,7 @@ public class UpdateProductCommandHandler(
                     StockQuantity = product.StockQuantity,
                     IsLive = product.IsLive
                 },
-                Message =ResponseMessages.UpdatedSuccess
+                Message = ResponseMessages.UpdatedSuccess
             };
         }
         catch (KeyNotFoundException ex)
@@ -72,14 +69,14 @@ public class UpdateProductCommandHandler(
         }
     }
     
-    private async Task<(string title, string? description, int stockQuantity, Category? category)> GetUpdatedProductFieldsAsync(UpdateProductCommand request, Domain.Entities.Product product)
+    private async Task<(string title, string? description, int stockQuantity, Category? category)> GetUpdatedProductFieldsAsync(UpdateProductCommand request, Domain.Entities.Product product, CancellationToken cancellationToken)
     {
         var category = request.CategoryId.IsSet
-            ? await categoryService.GetCategoryAsync(request.CategoryId.Value)
+            ? await categoryService.GetCategoryAsync(request.CategoryId.Value, cancellationToken)
             : product.Category;
 
         var title = request.Title.IsSet
-            ? request.Title.Value
+            ? request.Title.Value!
             : product.Title;
 
         var description = request.Description.IsSet

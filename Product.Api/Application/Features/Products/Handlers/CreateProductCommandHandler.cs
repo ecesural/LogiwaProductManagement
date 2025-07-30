@@ -1,9 +1,11 @@
 ﻿using MediatR;
+using Product.Api.Application.Common;
 using Product.Api.Application.Common.Interfaces;
 using Product.Api.Application.Common.Messages;
 using Product.Api.Application.Features.Products.Commands;
 using Product.Api.Application.Features.Products.Dtos;
 using Product.Api.Application.Features.Products.Responses;
+using Product.Api.Presentation.Extensions;
 
 namespace Product.Api.Application.Features.Products.Handlers;
 
@@ -15,30 +17,28 @@ public class CreateProductCommandHandler(
     ILoggerService<CreateProductCommandHandler> logger)
     : IRequestHandler<CreateProductCommand, CreateAndUpdateProductResponse>
 {
-    private const string CachePrefixAll = "product:all";
     public async Task<CreateAndUpdateProductResponse> Handle(CreateProductCommand request, CancellationToken cancellationToken)
     {
         logger.LogInfo("CreateProductCommand started.");
         try
         {
-            var category = await categoryService.GetCategoryAsync(request.CategoryId);
+            var category = await categoryService.GetCategoryAsync(request.CategoryId, cancellationToken);
 
             var product = new Domain.Entities.Product(
                 title: request.Title,
                 description: request.Description,
-                categoryId: request.CategoryId ?? Guid.Empty,
+                categoryId: request.CategoryId,
                 category: category,
                 stockQuantity: request.StockQuantity
             );
 
-            await productRepository.AddAsync(product);
+            await productRepository.AddAsync(product, cancellationToken);
            
-            foreach (var domainEvent in product.DomainEvents)
-            {
-                await domainEventPublisher.PublishAsync(domainEvent, cancellationToken);
-            }
+            await domainEventPublisher.PublishDomainEventsAsync(product.DomainEvents, logger,
+                cancellationToken);
             
-            await redisCacheService.RemoveAsync(CachePrefixAll);
+            product.ClearDomainEvents(); 
+            await redisCacheService.RemoveAsync(CacheKeys.ProductAll, cancellationToken);
            
             logger.LogInfo($"Product created with ID: {product.Id}");
             
@@ -63,7 +63,7 @@ public class CreateProductCommandHandler(
         }
         catch (Exception ex)
         {
-            logger.LogError("Unexpected error occurred while creating product.",ex);
+            logger.LogError("Unexpected error occurred while creating product.", ex);
             throw;
         }
     }

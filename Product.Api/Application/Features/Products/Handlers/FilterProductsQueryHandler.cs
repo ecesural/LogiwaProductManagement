@@ -1,63 +1,68 @@
 ﻿using MediatR;
+using Product.Api.Application.Common;
 using Product.Api.Application.Common.Interfaces;
 using Product.Api.Application.Features.Products.Dtos;
 using Product.Api.Application.Features.Products.Queries;
+using Product.Api.Presentation.Extensions;
 
 namespace Product.Api.Application.Features.Products.Handlers;
+
 public class FilterProductsQueryHandler(
     IProductRepository productRepository,
     IRedisCacheService redisCacheService,
     ILoggerService<FilterProductsQueryHandler> logger)
     : IRequestHandler<FilterProductsQuery, List<ProductDto>>
 {
-    private const string FilterCachePrefix = "products:filter:";
     public async Task<List<ProductDto>> Handle(FilterProductsQuery request, CancellationToken cancellationToken)
     {
         var cacheKey = GenerateCacheKey(request);
         try
         {
-            var cached = await redisCacheService.GetAsync<List<ProductDto>>(cacheKey);
-            if (cached is not null)
-            {
-                logger.LogInfo("Returned product list from cache.");
-                return cached;
-            }
+            var (result, fromCache) = await redisCacheService.TryGetOrSetAsync(
+                cacheKey,
+                async ct =>
+                {
+                    var products = await productRepository.FilterAsync(
+                        request.Keyword,
+                        request.MinStock,
+                        request.MaxStock,
+                        ct);
 
-            var products = await productRepository.FilterAsync(request.Keyword, request.MinStock, request.MaxStock);
+                    return products.Select(p => new ProductDto
+                    {
+                        Id = p.Id,
+                        Title = p.Title,
+                        Description = p.Description,
+                        Category = p.Category,
+                        StockQuantity = p.StockQuantity,
+                        IsLive = p.IsLive
+                    }).ToList();
+                },
+                TimeSpan.FromHours(1),
+                cancellationToken: cancellationToken,
+                cacheIfEmpty: false
+            );
 
-            var result = products.Select(p => new ProductDto
-            {
-                Id = p.Id,
-                Title = p.Title,
-                Description = p.Description,
-                Category = p.Category,
-                StockQuantity = p.StockQuantity,
-                IsLive = p.IsLive
-            }).ToList();
-            
-            await redisCacheService.SetAsync(cacheKey, result, TimeSpan.FromMinutes(30));
-            logger.LogInfo("Product list cached and returned.");
+            logger.LogInfo($"Filtered products returned from {(fromCache ? "cache" : "DB")}.");
 
             return result;
         }
         catch (Exception ex)
         {
             logger.LogError("Error occurred while filtering products.", ex);
-            throw; 
+            throw;
         }
     }
 
     private static string GenerateCacheKey(FilterProductsQuery request)
     {
-        var keywordPart = string.IsNullOrWhiteSpace(request.Keyword)
+        var keyword = string.IsNullOrWhiteSpace(request.Keyword)
             ? "all"
             : new string(request.Keyword
                     .Where(c => !char.IsWhiteSpace(c))
                     .ToArray())
                 .ToLowerInvariant();
-        var minStockPart = request.MinStock.HasValue ? request.MinStock.Value.ToString() : "minnull";
-        var maxStockPart = request.MaxStock.HasValue ? request.MaxStock.Value.ToString() : "maxnull";
-
-        return $"{FilterCachePrefix}{keywordPart}:{minStockPart}:{maxStockPart}";
+        return
+            $"{CacheKeys.ProductFilter}k={keyword}&min={request.MinStock?.ToString() ?? "null"}&max={request.MaxStock?.ToString() ?? "null"}";
     }
 }

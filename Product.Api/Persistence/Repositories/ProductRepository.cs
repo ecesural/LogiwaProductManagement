@@ -5,32 +5,50 @@ namespace Product.Api.Persistence.Repositories;
 
 public class ProductRepository(ProductDbContext context) : IProductRepository
 {
-    public async Task AddAsync(Domain.Entities.Product product)
+    public async Task AddAsync(Domain.Entities.Product product, CancellationToken cancellationToken = default)
     {
-        await context.Products.AddAsync(product);
-        await context.SaveChangesAsync();
+        if (product.Category is not null)
+        {
+            context.Attach(product.Category);
+        }
+        await context.Products.AddAsync(product, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
     }
-    public async Task<Domain.Entities.Product?> GetByIdAsync(Guid id)
-    {
-        return await context.Products.AsNoTracking().Include(p => p.Category)
-            .FirstOrDefaultAsync(p => p.Id == id);
-    }
-    public async Task<List<Domain.Entities.Product>> GetAllAsync()
-    {
-        return await context.Products.AsNoTracking()
-            .Include(p => p.Category)
-            .ToListAsync();
-    }
-    public async Task<List<Domain.Entities.Product>> FilterAsync(string? keyword, int? minStock, int? maxStock)
-    {
-        IQueryable<Domain.Entities.Product> query = context.Products.AsNoTracking().Include(p => p.Category);
 
+    public async Task<Domain.Entities.Product?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        return await context.Products
+            .AsNoTracking()
+            .Include(p => p.Category)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+    }
+
+    public async Task<List<Domain.Entities.Product>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        return await context.Products
+            .AsNoTracking()
+            .Include(p => p.Category)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<Domain.Entities.Product>> FilterAsync(string? keyword, int? minStock, int? maxStock, CancellationToken cancellationToken = default)
+    {
+        var query = context.Products
+            .Include(p => p.Category).AsQueryable();
+        
         if (!string.IsNullOrWhiteSpace(keyword))
         {
-            query = query.Where(p =>
-                p.Title.Contains(keyword) ||
-                p.Description.Contains(keyword) ||
-                (p.Category != null && p.Category.Name.Contains(keyword)));
+            var words = keyword
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            foreach (var word in words)
+            {
+                var temp = word;
+                query = query.Where(p =>
+                    p.Title.Contains(temp) ||
+                    p.Description.Contains(temp) ||
+                    (p.Category != null && p.Category.Name.Contains(temp)));
+            }
         }
 
         if (minStock.HasValue)
@@ -43,17 +61,19 @@ public class ProductRepository(ProductDbContext context) : IProductRepository
             query = query.Where(p => p.StockQuantity <= maxStock.Value);
         }
 
-        return await query.ToListAsync();
+        return await query.AsNoTracking().ToListAsync(cancellationToken);
     }
-    public async Task UpdateAsync(Domain.Entities.Product product)
+
+    public async Task UpdateAsync(Domain.Entities.Product product, CancellationToken cancellationToken = default)
     {
         context.Products.Update(product);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
-    public async Task DeleteAsync(Domain.Entities.Product product)
+
+    public async Task DeleteAsync(Domain.Entities.Product product, CancellationToken cancellationToken = default)
     {
         context.Products.Remove(product);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 }
 

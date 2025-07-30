@@ -9,14 +9,5 @@ public static class ApplicationBuilderExtensions
     {
         return app.UseMiddleware<GlobalExceptionMiddleware>();
     }
-
-    public static IApplicationBuilder UseRequestResponseLogging(this IApplicationBuilder app)
-    {
-        return app.UseMiddleware<RequestResponseLoggingMiddleware>();
-    }
     
-    public static IApplicationBuilder UseCustomHealthCheck(this IApplicationBuilder app)
-    {
-        return app.UseMiddleware<HealthCheckMiddleware>();
-    }
 }

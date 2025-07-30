@@ -4,5 +4,5 @@ namespace Product.Api.Application.Common.Interfaces;
 
 public interface ICategoryRepository
 {
-    Task<Category?> GetByIdAsync(Guid? id);
+    Task<Category?> GetByIdAsync(Guid? id, CancellationToken cancellationToken = default);
 }

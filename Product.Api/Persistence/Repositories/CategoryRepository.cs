@@ -7,10 +7,10 @@ namespace Product.Api.Persistence.Repositories;
 
 public class CategoryRepository(ProductDbContext context) : ICategoryRepository
 {
-    public async Task<Category?> GetByIdAsync(Guid? id)
+    public async Task<Category?> GetByIdAsync(Guid? id, CancellationToken cancellationToken = default)
     {
         return await context.Categories.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == id);
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
     }
 }
 

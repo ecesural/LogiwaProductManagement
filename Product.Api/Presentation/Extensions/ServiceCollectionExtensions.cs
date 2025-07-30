@@ -9,7 +9,7 @@ using FluentValidation;
 using Product.Api.Application.Behaviors;
 using Product.Api.Application.Common.Interfaces;
 using Product.Api.Application.Features.Products.Commands;
-using Product.Api.Application.Features.Products.Services;
+using Product.Api.Infrastructure.Services;
 using Product.Api.Persistence.Repositories;
 
 namespace Product.Api.Presentation.Extensions;
@@ -20,10 +20,9 @@ public static class ServiceCollectionExtensions
         services.AddMediatR(typeof(CreateProductCommand).Assembly);
 
         services.AddValidatorsFromAssembly(typeof(CreateProductCommand).Assembly);
-
-        services.AddScoped(typeof(ILoggerService<>), typeof(LoggerService<>));
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
-       
+        services.AddScoped(typeof(ILoggerService<>), typeof(LoggerService<>));
+     
         services.AddSingleton<IConnectionMultiplexer>(sp =>
         {
             var config = $"{configuration["Redis:Host"]}:{configuration["Redis:Port"]},abortConnect=false";

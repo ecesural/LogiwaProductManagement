@@ -15,11 +15,11 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
         catch (Exception ex)
         {
             logger.LogError(ex, $"Unhandled exception: {ex.Message}");
-            HandleExceptionAsync(context, ex);
+            await HandleExceptionAsync(context, ex);
         }
     }
 
-    private static void HandleExceptionAsync(HttpContext context, Exception exception)
+    private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
         context.Response.ContentType = "application/json";
 
@@ -38,7 +38,7 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
         };
 
         context.Response.StatusCode = statusCode;
-        var json = JsonSerializer.Serialize(errorResponse); 
-        context.Response.WriteAsync(json);
+        var json = JsonSerializer.Serialize(errorResponse);
+        await context.Response.WriteAsync(json);
     }
 }

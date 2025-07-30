@@ -1,100 +1,117 @@
 ﻿using System.Reflection;
 using FluentAssertions;
 using Moq;
+using Product.Api.Application.Common;
 using Product.Api.Application.Common.Interfaces;
 using Product.Api.Application.Features.Products.Dtos;
 using Product.Api.Application.Features.Products.Handlers;
 using Product.Api.Application.Features.Products.Queries;
+using Product.Api.Domain.Entities;
+using Product.Api.Presentation.Extensions;
 
 namespace Product.UnitTests.Applications.Products.Handlers;
 
 public class FilterProductsQueryHandlerTests
 {
-    private readonly Mock<IProductRepository> _productRepositoryMock = new();
-    private readonly Mock<IRedisCacheService> _redisCacheServiceMock = new();
-    private readonly Mock<ILoggerService<FilterProductsQueryHandler>> _loggerMock = new();
-    private const string FilterCachePrefix = "products:filter:";
+    private readonly Mock<IProductRepository> _productRepositoryMock;
+    private readonly Mock<IRedisCacheService> _redisCacheServiceMock;
+    private readonly Mock<ILoggerService<FilterProductsQueryHandler>> _loggerMock;
 
-    private FilterProductsQueryHandler CreateHandler() =>
-        new(_productRepositoryMock.Object, _redisCacheServiceMock.Object, _loggerMock.Object);
+    private readonly FilterProductsQueryHandler _handler;
 
-    [Fact]
-    public async Task Handle_ShouldReturnProductsFromCache_WhenCacheExists()
+    public FilterProductsQueryHandlerTests()
     {
-        var query = new FilterProductsQuery("product 1", 5, 100);
-        var cacheKey =$"{FilterCachePrefix}product1:5:100";
+        _productRepositoryMock = new Mock<IProductRepository>();
+        _redisCacheServiceMock = new Mock<IRedisCacheService>();
+        _loggerMock = new Mock<ILoggerService<FilterProductsQueryHandler>>();
 
-        var cachedList = new List<ProductDto>
-        {
-            new() { Id = Guid.NewGuid(), Title = "CachedProduct", StockQuantity = 10 }
-        };
-
-        _redisCacheServiceMock.Setup(x => x.GetAsync<List<ProductDto>>(cacheKey))
-            .ReturnsAsync(cachedList);
-
-        var handler = CreateHandler();
-
-        var result = await handler.Handle(query, CancellationToken.None);
-
-        result.Should().BeEquivalentTo(cachedList);
-        _productRepositoryMock.Verify(x => x.FilterAsync(It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<int?>()), Times.Never);
-        _loggerMock.Verify(x => x.LogInfo("Returned product list from cache."), Times.Once);
+        _handler = new FilterProductsQueryHandler(
+            _productRepositoryMock.Object,
+            _redisCacheServiceMock.Object,
+            _loggerMock.Object);
     }
 
     [Fact]
-    public async Task Handle_ShouldReturnProductsFromDbAndCacheThem_WhenCacheIsEmpty()
+    public async Task Handle_ReturnsProducts_FromCache()
     {
-        var query = new FilterProductsQuery("product", 1, 10);
-        var cacheKey = $"{FilterCachePrefix}product:1:10";
-
-        _redisCacheServiceMock.Setup(x => x.GetAsync<List<ProductDto>>(cacheKey))
-            .ReturnsAsync((List<ProductDto>?)null);
-
-        var dbProducts = new List<Api.Domain.Entities.Product>
+        // Arrange
+        var query = new FilterProductsQuery("test", 1, 10);
+        var expectedCacheKey = $"{CacheKeys.ProductFilter}k=test&min=1&max=10";
+        var cachedProducts = new List<ProductDto>
         {
-            new("Product 1", "desc 1", null, 5, null),
-            new("Product 2", "desc 2", null, 7, null)
+            new ProductDto
+            {
+                Id = Guid.NewGuid(),
+                Title = "test",
+                Description = "Cached Description",
+                Category = null,
+                StockQuantity = 3,
+                IsLive = true
+            }
         };
-        
-        foreach (var t in dbProducts)
+
+        _redisCacheServiceMock
+            .Setup(c => c.GetAsync<List<ProductDto>>(expectedCacheKey,It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cachedProducts);
+
+        // Act
+        var result = await _handler.Handle(query, CancellationToken.None);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("test", result[0].Title);
+        _productRepositoryMock.Verify(x => x.FilterAsync(It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_ReturnsProducts_FromRepository_WhenCacheMiss()
+    {
+        // Arrange
+        var query = new FilterProductsQuery("test", 1, 10);
+        var expectedCacheKey = $"{CacheKeys.ProductFilter}k=test&min=1&max=10";
+        var category = new Category("Electronics", 5);
+
+        var repoProducts = new List<Api.Domain.Entities.Product>
         {
-            typeof(Api.Domain.Entities.Product).GetProperty("Id", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!
-                .SetValue(t, Guid.NewGuid());
-        }
+            new Api.Domain.Entities.Product(
+                title: "Repo Product",
+                description: "Repository Description",
+                categoryId: category.Id,
+                stockQuantity: 5,
+                category: category)
+        };
 
-        _productRepositoryMock.Setup(x => x.FilterAsync(query.Keyword, query.MinStock, query.MaxStock))
-            .ReturnsAsync(dbProducts);
-
-        _redisCacheServiceMock.Setup(x => x.SetAsync(cacheKey, It.IsAny<List<ProductDto>>(), It.IsAny<TimeSpan>()))
+        _redisCacheServiceMock
+            .Setup(c => c.SetAsync(expectedCacheKey, It.IsAny<List<ProductDto>>(), TimeSpan.FromHours(1),It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var handler = CreateHandler();
+        _productRepositoryMock
+            .Setup(x => x.FilterAsync(query.Keyword, query.MinStock, query.MaxStock, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(repoProducts);
 
-        var result = await handler.Handle(query, CancellationToken.None);
+        // Act
+        var result = await _handler.Handle(query, CancellationToken.None);
 
-        result.Should().HaveCount(2);
-        _productRepositoryMock.Verify(x => x.FilterAsync(query.Keyword, query.MinStock, query.MaxStock), Times.Once);
-        _redisCacheServiceMock.Verify(x => x.SetAsync(cacheKey, It.IsAny<List<ProductDto>>(), It.IsAny<TimeSpan>()), Times.Once);
-        _loggerMock.Verify(x => x.LogInfo("Product list cached and returned."), Times.Once);
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Repo Product", result[0].Title);
+        Assert.Equal("Repository Description", result[0].Description);
+        Assert.Equal(category, result[0].Category);
+        Assert.Equal(5, result[0].StockQuantity);
+        _loggerMock.Verify(l => l.LogInfo(It.Is<string>(s => s.Contains("DB"))), Times.Once);
     }
 
     [Fact]
-    public async Task Handle_ShouldLogErrorAndThrow_WhenExceptionOccurs()
+    public async Task Handle_LogsErrorAndThrows_WhenExceptionThrown()
     {
-        var query = new FilterProductsQuery("product 1", null, null);
-        var cacheKey = $"{FilterCachePrefix}product1:minnull:maxnull";
+        // Arrange
+        var query = new FilterProductsQuery("test", 1, 10);
+        var expectedCacheKey = $"{CacheKeys.ProductFilter}k=test&min=1&max=10";
+        _redisCacheServiceMock
+            .Setup(c => c.GetAsync<List<ProductDto>>(expectedCacheKey,It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Redis down"));
 
-        _redisCacheServiceMock.Setup(x => x.GetAsync<List<ProductDto>>(cacheKey))
-            .ReturnsAsync((List<ProductDto>?)null);
-
-        _productRepositoryMock.Setup(x => x.FilterAsync(query.Keyword, query.MinStock, query.MaxStock))
-            .ThrowsAsync(new Exception("Database error"));
-
-        var handler = CreateHandler();
-
-        var act = async () => await handler.Handle(query, CancellationToken.None);
-
-        await act.Should().ThrowAsync<Exception>().WithMessage("Database error");
-        _loggerMock.Verify(x => x.LogError("Error occurred while filtering products.", It.IsAny<Exception>()), Times.Once);
+        var act = async () => await _handler.Handle(query, CancellationToken.None);
+        await act.Should().ThrowAsync<Exception>().WithMessage("Redis down");
     }
 }

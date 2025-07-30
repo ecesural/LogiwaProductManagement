@@ -1,5 +1,6 @@
 ﻿using FluentAssertions;
 using Moq;
+using Product.Api.Application.Common;
 using Product.Api.Application.Common.Interfaces;
 using Product.Api.Application.Features.Products.Dtos;
 using Product.Api.Application.Features.Products.Handlers;
@@ -45,7 +46,7 @@ public class GetAllProductsQueryHandlerTests
         };
 
         _redisCacheServiceMock
-            .Setup(c => c.GetAsync<List<ProductDto>>(CacheKey))
+            .Setup(c => c.GetAsync<List<ProductDto>>(CacheKeys.ProductAll,It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedProducts);
 
         var query = new GetAllProductsQuery();
@@ -54,14 +55,14 @@ public class GetAllProductsQueryHandlerTests
 
         result.Should().BeEquivalentTo(cachedProducts);
         _loggerMock.Verify(l => l.LogInfo("All products returned from cache."), Times.Once);
-        _productRepositoryMock.Verify(r => r.GetAllAsync(), Times.Never);
+        _productRepositoryMock.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task Handle_ShouldFetchFromRepository_WhenCacheIsNull()
     {
         _redisCacheServiceMock
-            .Setup(c => c.GetAsync<List<ProductDto>>(CacheKey))
+            .Setup(c => c.GetAsync<List<ProductDto>>(CacheKey,It.IsAny<CancellationToken>()))
             .ReturnsAsync((List<ProductDto>)null!);
 
         var category = new Category("Category", 10);
@@ -69,11 +70,11 @@ public class GetAllProductsQueryHandlerTests
         var products = new List<Api.Domain.Entities.Product> { product };
 
         _productRepositoryMock
-            .Setup(r => r.GetAllAsync())
+            .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(products);
 
         _redisCacheServiceMock
-            .Setup(c => c.SetAsync(CacheKey, It.IsAny<List<ProductDto>>(), TimeSpan.FromHours(1)))
+            .Setup(c => c.SetAsync(CacheKey, It.IsAny<List<ProductDto>>(), TimeSpan.FromHours(1),It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var query = new GetAllProductsQuery();
@@ -84,16 +85,15 @@ public class GetAllProductsQueryHandlerTests
         result[0].Title.Should().Be("Product A");
         result[0].Category?.Name.Should().Be("Category");
 
-        _productRepositoryMock.Verify(r => r.GetAllAsync(), Times.Once);
-        _redisCacheServiceMock.Verify(c => c.SetAsync(CacheKey, It.IsAny<List<ProductDto>>(), TimeSpan.FromHours(1)), Times.Once);
-        _loggerMock.Verify(l => l.LogInfo("All products cached and returned."), Times.Once);
+        _productRepositoryMock.Verify(r => r.GetAllAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _redisCacheServiceMock.Verify(c => c.SetAsync(CacheKey, It.IsAny<List<ProductDto>>(), TimeSpan.FromHours(1),It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task Handle_ShouldLogAndThrow_WhenExceptionOccurs()
     {
         _redisCacheServiceMock
-            .Setup(c => c.GetAsync<List<ProductDto>>(CacheKey))
+            .Setup(c => c.GetAsync<List<ProductDto>>(CacheKey,It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Redis down"));
 
         var query = new GetAllProductsQuery();

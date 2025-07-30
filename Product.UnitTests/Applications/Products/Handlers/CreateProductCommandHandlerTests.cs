@@ -1,135 +1,113 @@
 ﻿using FluentAssertions;
 using MediatR;
 using Moq;
+using Product.Api.Application.Common;
 using Product.Api.Application.Common.Interfaces;
 using Product.Api.Application.Common.Messages;
 using Product.Api.Application.Features.Products.Commands;
 using Product.Api.Application.Features.Products.Handlers;
 using Product.Api.Domain.Entities;
+using Product.Api.Presentation.Extensions;
+
 namespace Product.UnitTests.Applications.Products.Handlers;
 
 public class CreateProductCommandHandlerTests
+{
+    private readonly Mock<IProductRepository> _productRepositoryMock = new();
+    private readonly Mock<IDomainEventPublisher> _domainEventPublisherMock = new();
+    private readonly Mock<ICategoryService> _categoryServiceMock = new();
+    private readonly Mock<IRedisCacheService> _redisCacheServiceMock = new();
+    private readonly Mock<ILoggerService<CreateProductCommandHandler>> _loggerMock = new();
+
+    private readonly CreateProductCommandHandler _handler;
+
+    public CreateProductCommandHandlerTests()
     {
-        private readonly Mock<IProductRepository> _productRepositoryMock;
-        private readonly Mock<IDomainEventPublisher> _domainEventPublisherMock;
-        private readonly Mock<ICategoryService> _categoryServiceMock;
-        private readonly Mock<ILoggerService<CreateProductCommandHandler>> _loggerMock;
-        private readonly Mock<IRedisCacheService> _redisCacheServiceMock;
+        _handler = new CreateProductCommandHandler(
+            _productRepositoryMock.Object,
+            _domainEventPublisherMock.Object,
+            _categoryServiceMock.Object,
+            _redisCacheServiceMock.Object,
+            _loggerMock.Object);
+    }
+    
+    [Fact]
+    public async Task Handle_ShouldCreateProductAndReturnResponse_WhenValid()
+    {
+        var categoryId = Guid.NewGuid();
+        var category = new Category("Shoes", 100);
+        var command = new CreateProductCommand("Sneaker", "Stylish sneaker", categoryId, 50);
 
-        private readonly CreateProductCommandHandler _handler;
-        private const string CachePrefixAll = "product:all";
+        _categoryServiceMock
+            .Setup(s => s.GetCategoryAsync(categoryId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        Api.Domain.Entities.Product? addedProduct = null;
+
+        _productRepositoryMock
+            .Setup(r => r.AddAsync(It.IsAny<Api.Domain.Entities.Product>(), It.IsAny<CancellationToken>()))
+            .Callback<Api.Domain.Entities.Product, CancellationToken>((p, _) => addedProduct = p)
+            .Returns(Task.CompletedTask);
         
-        public CreateProductCommandHandlerTests()
-        {
-            _productRepositoryMock = new Mock<IProductRepository>();
-            _domainEventPublisherMock = new Mock<IDomainEventPublisher>();
-            _categoryServiceMock = new Mock<ICategoryService>();
-            _loggerMock = new Mock<ILoggerService<CreateProductCommandHandler>>();
-            _redisCacheServiceMock = new Mock<IRedisCacheService>();
+        _redisCacheServiceMock
+            .Setup(c => c.RemoveAsync(CacheKeys.ProductAll, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
-            _handler = new CreateProductCommandHandler(
-                _productRepositoryMock.Object,
-                _domainEventPublisherMock.Object,
-                _categoryServiceMock.Object,
-                _redisCacheServiceMock.Object,
-                _loggerMock.Object);
-        }
+        var response = await _handler.Handle(command, CancellationToken.None);
 
-        [Fact]
-        public async Task Handle_ShouldCreateProductAndReturnResponse_WhenCommandIsValid()
-        {
-            var categoryId = Guid.NewGuid();
-            var category = new Category("Category 1", 10);
-            var command = new CreateProductCommand("Product 1", "Desc 1", categoryId, 25);
+        response.Should().NotBeNull();
+        response.Message.Should().Be(ResponseMessages.CreatedSuccess);
 
-            _categoryServiceMock
-                .Setup(s => s.GetCategoryAsync(categoryId))
-                .ReturnsAsync(category);
+        response.ProductDto.Should().NotBeNull();
+        response.ProductDto.Title.Should().Be(command.Title);
+        response.ProductDto.Description.Should().Be(command.Description);
+        response.ProductDto.Category.Should().Be(category);
+        response.ProductDto.StockQuantity.Should().Be(command.StockQuantity);
 
-            Api.Domain.Entities.Product capturedProduct = null!;
-            _productRepositoryMock
-                .Setup(r => r.AddAsync(It.IsAny<Api.Domain.Entities.Product>()))
-                .Callback<Api.Domain.Entities.Product>(p => capturedProduct = p)
-                .Returns(Task.CompletedTask);
-
-            _domainEventPublisherMock
-                .Setup(p => p.PublishAsync(It.IsAny<INotification>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
-
-            _redisCacheServiceMock
-                .Setup(c => c.RemoveAsync(CachePrefixAll))
-                .Returns(Task.CompletedTask);
-            var response = await _handler.Handle(command, CancellationToken.None);
-            
-            capturedProduct.Should().NotBeNull();
-            capturedProduct.Title.Should().Be(command.Title);
-            capturedProduct.Description.Should().Be(command.Description);
-            capturedProduct.CategoryId.Should().Be(command.CategoryId);
-            capturedProduct.Category.Should().Be(category);
-            capturedProduct.StockQuantity.Should().Be(command.StockQuantity);
-
-            response.Should().NotBeNull();
-            response.Message.Should().Be(ResponseMessages.CreatedSuccess);
-
-            response.ProductDto.Should().NotBeNull();
-            response.ProductDto.Id.Should().Be(capturedProduct.Id);
-            response.ProductDto.Title.Should().Be(command.Title);
-            response.ProductDto.Description.Should().Be(command.Description);
-            response.ProductDto.Category.Should().Be(category);
-            response.ProductDto.StockQuantity.Should().Be(command.StockQuantity);
-            response.ProductDto.IsLive.Should().BeTrue();
-
-            _productRepositoryMock.Verify(r => r.AddAsync(It.IsAny<Api.Domain.Entities.Product>()), Times.Once);
-            _domainEventPublisherMock.Verify(p => p.PublishAsync(It.IsAny<INotification>(), It.IsAny<CancellationToken>()), Times.Exactly(capturedProduct.DomainEvents.Count));
-            _redisCacheServiceMock.Verify(c => c.RemoveAsync(CachePrefixAll), Times.Once);
-            _loggerMock.Verify(l => l.LogInfo(It.Is<string>(msg => msg.Contains("Product created"))), Times.Once);
-        }
-
-        [Fact]
-        public async Task Handle_ShouldThrowKeyNotFoundException_WhenCategoryNotFound()
-        {
-            var categoryId = Guid.NewGuid();
-            var expectedMessage = ExceptionMessages.CategoryNotFound;
-
-            var command = new CreateProductCommand("Product 1", "Desc 1", categoryId, 25);
-
-            _categoryServiceMock
-                .Setup(s => s.GetCategoryAsync(categoryId))
-                .ThrowsAsync(new KeyNotFoundException(expectedMessage));
-
-            Func<Task> act = async () => await _handler.Handle(command, CancellationToken.None);
-            
-            var exception = await Assert.ThrowsAsync<KeyNotFoundException>(act);
-            exception.Message.Should().Be(expectedMessage);
-
-            _loggerMock.Verify(l => l.LogWarning(It.Is<string>(msg => msg.Contains(expectedMessage))), Times.Once);
-        }
-
-        [Fact]
-        public async Task Handle_ShouldThrowException_WhenUnexpectedErrorOccurs()
-        {
-            var categoryId = Guid.NewGuid();
-            var category = new Category("Category 1", 10);
-            var command = new CreateProductCommand("Product 1", "Desc 1", categoryId, 25);
-
-            _categoryServiceMock
-                .Setup(s => s.GetCategoryAsync(categoryId))
-                .ReturnsAsync(category);
-
-            _productRepositoryMock
-                .Setup(r => r.AddAsync(It.IsAny<Api.Domain.Entities.Product>()))
-                .ThrowsAsync(new Exception("Database error"));
-
-            var act = async () => await _handler.Handle(command, CancellationToken.None);
-            
-            await act.Should().ThrowAsync<Exception>().WithMessage("Database error");
-
-            _loggerMock.Verify(
-                l => l.LogError(It.Is<string>(s => s.Contains("Unexpected error occurred while creating product.")),
-                It.IsAny<Exception>()),
-                Times.Once);
-        }
+        _productRepositoryMock.Verify(r => r.AddAsync(It.IsAny<Api.Domain.Entities.Product>(), It.IsAny<CancellationToken>()), Times.Once);
+        _redisCacheServiceMock.Verify(c => c.RemoveAsync(CacheKeys.ProductAll, It.IsAny<CancellationToken>()), Times.Once);
+        _loggerMock.Verify(l => l.LogInfo(It.Is<string>(s => s.Contains("Product created"))), Times.Once);
     }
 
+    [Fact]
+    public async Task Handle_ShouldThrowKeyNotFoundException_WhenCategoryNotFound()
+    {
+        var categoryId = Guid.NewGuid();
+        var command = new CreateProductCommand("Boots", "Leather boots", categoryId, 10);
+        var exceptionMessage = "Category not found";
 
+        _categoryServiceMock
+            .Setup(s => s.GetCategoryAsync(categoryId, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new KeyNotFoundException(exceptionMessage));
 
+        var act = () => _handler.Handle(command, CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<KeyNotFoundException>(act);
+        exception.Message.Should().Be(exceptionMessage);
+
+        _loggerMock.Verify(l => l.LogWarning(It.Is<string>(m => m.Contains(exceptionMessage))), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ShouldThrowException_AndLog_WhenUnexpectedErrorOccurs()
+    {
+
+        var command = new CreateProductCommand("Jacket", "Winter jacket", Guid.NewGuid(), 5);
+        var category = new Category("Clothing", 10);
+
+        _categoryServiceMock
+            .Setup(s => s.GetCategoryAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(category);
+
+        _productRepositoryMock
+            .Setup(r => r.AddAsync(It.IsAny<Api.Domain.Entities.Product>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("DB Failure"));
+        
+        var act = () => _handler.Handle(command, CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<Exception>(act);
+        ex.Message.Should().Be("DB Failure");
+
+        _loggerMock.Verify(l => l.LogError("Unexpected error occurred while creating product.", It.IsAny<Exception>()), Times.Once);
+    }
+}

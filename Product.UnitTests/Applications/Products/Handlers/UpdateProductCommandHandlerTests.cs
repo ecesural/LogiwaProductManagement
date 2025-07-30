@@ -33,7 +33,7 @@ public class UpdateProductCommandHandlerTests
         var productId = Guid.NewGuid();
         var request = new UpdateProductCommand(productId, "Product 1", "Desc 1", Guid.NewGuid(), 5);
 
-        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId)).ReturnsAsync((Api.Domain.Entities.Product)null!);
+        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId,It.IsAny<CancellationToken>())).ReturnsAsync((Api.Domain.Entities.Product)null!);
         
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
             _handler.Handle(request, CancellationToken.None));
@@ -51,9 +51,9 @@ public class UpdateProductCommandHandlerTests
 
         var request = new UpdateProductCommand(productId, "New Title", "New Desc", categoryId, 15);
 
-        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId)).ReturnsAsync(product);
+        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId,It.IsAny<CancellationToken>())).ReturnsAsync(product);
 
-        _categoryServiceMock.Setup(x => x.GetCategoryAsync(categoryId))
+        _categoryServiceMock.Setup(x => x.GetCategoryAsync(categoryId,It.IsAny<CancellationToken>()))
             .ThrowsAsync(new KeyNotFoundException(ExceptionMessages.CategoryNotFound));
 
         await Assert.ThrowsAsync<KeyNotFoundException>(() =>
@@ -71,8 +71,8 @@ public class UpdateProductCommandHandlerTests
         var product = new Api.Domain.Entities.Product("Old Title", "Old Desc", categoryId, 5, category);
         var request = new UpdateProductCommand(productId, "New Title", "New Desc", categoryId, 99);
 
-        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId)).ReturnsAsync(product);
-        _categoryServiceMock.Setup(x => x.GetCategoryAsync(categoryId)).ReturnsAsync(category);
+        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId,It.IsAny<CancellationToken>())).ReturnsAsync(product);
+        _categoryServiceMock.Setup(x => x.GetCategoryAsync(categoryId,It.IsAny<CancellationToken>())).ReturnsAsync(category);
         
         await _handler.Handle(request, CancellationToken.None);
         Assert.Equal("New Title", product.Title);
@@ -92,7 +92,7 @@ public class UpdateProductCommandHandlerTests
         var product = new Api.Domain.Entities.Product("Title", "Desc", categoryId, 10, oldCategory);
         var request = new UpdateProductCommand(productId, "New Title", "New Desc", Guid.Empty, 1);
 
-        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId)).ReturnsAsync(product);
+        _productRepositoryMock.Setup(x => x.GetByIdAsync(productId,It.IsAny<CancellationToken>())).ReturnsAsync(product);
         
         await _handler.Handle(request, CancellationToken.None);
         Assert.Null(product.Category);

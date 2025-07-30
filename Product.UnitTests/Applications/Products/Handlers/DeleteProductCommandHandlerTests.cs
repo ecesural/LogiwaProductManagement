@@ -1,6 +1,7 @@
 ﻿using FluentAssertions;
 using MediatR;
 using Moq;
+using Product.Api.Application.Common;
 using Product.Api.Application.Common.Interfaces;
 using Product.Api.Application.Common.Messages;
 using Product.Api.Application.Features.Products.Commands;
@@ -15,7 +16,6 @@ public class DeleteProductCommandHandlerTests
     private readonly Mock<IRedisCacheService> _redisCacheServiceMock;
     private readonly Mock<ILoggerService<DeleteProductCommandHandler>> _loggerMock;
     private readonly DeleteProductCommandHandler _handler;
-    private const string CachePrefix = "product:";
     public DeleteProductCommandHandlerTests()
     {
         _productRepositoryMock = new Mock<IProductRepository>();
@@ -41,21 +41,19 @@ public class DeleteProductCommandHandlerTests
         typeof(Api.Domain.Entities.Product).GetProperty("Id")!.SetValue(product, productId);
 
         _productRepositoryMock
-            .Setup(repo => repo.GetByIdAsync(productId))
+            .Setup(repo => repo.GetByIdAsync(productId,It.IsAny<CancellationToken>()))
             .ReturnsAsync(product);
 
         _productRepositoryMock
-            .Setup(repo => repo.DeleteAsync(product))
+            .Setup(repo => repo.DeleteAsync(product,It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         _domainEventPublisherMock
             .Setup(p => p.PublishAsync(It.IsAny<INotification>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
-
-        var cacheKey = CachePrefix + productId;
-
+        
         _redisCacheServiceMock
-            .Setup(cache => cache.RemoveAsync(cacheKey))
+            .Setup(cache => cache.RemoveAsync(CacheKeys.ProductById(productId),It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var command = new DeleteProductCommand(productId);
@@ -66,9 +64,9 @@ public class DeleteProductCommandHandlerTests
         result.ProductId.Should().Be(productId);
         result.Message.Should().Be(ResponseMessages.DeletedSuccess);
 
-        _productRepositoryMock.Verify(repo => repo.GetByIdAsync(productId), Times.Once);
-        _productRepositoryMock.Verify(repo => repo.DeleteAsync(product), Times.Once);
-        _redisCacheServiceMock.Verify(cache => cache.RemoveAsync(cacheKey), Times.Once);
+        _productRepositoryMock.Verify(repo => repo.GetByIdAsync(productId,It.IsAny<CancellationToken>()), Times.Once);
+        _productRepositoryMock.Verify(repo => repo.DeleteAsync(product,It.IsAny<CancellationToken>()), Times.Once);
+        _redisCacheServiceMock.Verify(cache => cache.RemoveAsync(CacheKeys.ProductById(productId),It.IsAny<CancellationToken>()), Times.Once);
         _loggerMock.Verify(log => log.LogInfo(It.Is<string>(msg => msg.Contains("Product deleted"))), Times.Once);
     }
     
@@ -79,7 +77,7 @@ public class DeleteProductCommandHandlerTests
         var expectedMessage = ExceptionMessages.ProductNotFound;
 
         _productRepositoryMock
-            .Setup(repo => repo.GetByIdAsync(productId))
+            .Setup(repo => repo.GetByIdAsync(productId,It.IsAny<CancellationToken>()))
             .ReturnsAsync((Api.Domain.Entities.Product)null!);
 
         var command = new DeleteProductCommand(productId);
@@ -102,11 +100,11 @@ public class DeleteProductCommandHandlerTests
         var product = new Api.Domain.Entities.Product("Product 1", "Desc 1", category.Id, 30,category);
 
         _productRepositoryMock
-            .Setup(repo => repo.GetByIdAsync(productId))
+            .Setup(repo => repo.GetByIdAsync(productId,It.IsAny<CancellationToken>()))
             .ReturnsAsync(product);
 
         _productRepositoryMock
-            .Setup(repo => repo.DeleteAsync(product))
+            .Setup(repo => repo.DeleteAsync(product,It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Database failure"));
 
         var command = new DeleteProductCommand(productId);

@@ -23,7 +23,7 @@ public class Product
     {
         Title = title;
         Description = description;
-        CategoryId = categoryId;
+        CategoryId = categoryId ?? null;
         Category = category;
         StockQuantity = stockQuantity;
         SetLiveStatus();
@@ -35,7 +35,7 @@ public class Product
     {
         Title = title;
         Description = description;
-        CategoryId = categoryId ?? Guid.Empty;
+        CategoryId = categoryId ?? null;
         Category = category;
         StockQuantity = stockQuantity;
         SetLiveStatus();
@@ -49,8 +49,13 @@ public class Product
                  StockQuantity >= (Category?.MinStockQuantity ?? 0);
     }
 
-    public void Delete()
+    public void AddDeleteEvent()
     {
         DomainEvents.Add(new ProductDeletedEvent(this));
+    }
+    
+    public void ClearDomainEvents()
+    {
+        DomainEvents.Clear();
     }
 }
